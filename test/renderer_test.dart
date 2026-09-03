@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:maat_khnum_core/maat_khnum_core.dart';
+import 'package:khnum/khnum.dart';
 import 'package:test/test.dart';
 
 class User {

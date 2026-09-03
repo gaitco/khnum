@@ -1,4 +1,4 @@
-/// Base class for every error maat_khnum_core raises. Always carries the template
+/// Base class for every error khnum raises. Always carries the template
 /// name and the 1-based line where the problem is, when known.
 class TemplateException implements Exception {
   TemplateException(this.message, {this.template, this.line});
