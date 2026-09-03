@@ -1,6 +1,6 @@
-import 'package:maat_khnum_core/maat_khnum_core.dart';
-import 'package:maat_khnum_core/src/lexer.dart';
-import 'package:maat_khnum_core/src/parser.dart';
+import 'package:khnum/khnum.dart';
+import 'package:khnum/src/lexer.dart';
+import 'package:khnum/src/parser.dart';
 import 'package:test/test.dart';
 
 void main() {

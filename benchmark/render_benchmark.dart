@@ -1,7 +1,7 @@
 // Run: dart run benchmark/render_benchmark.dart
 // A realistic page: layout + nav partial + two components + a 50-row table,
 // rendered repeatedly from the in-memory AST cache (production mode).
-import 'package:maat_khnum_core/maat_khnum_core.dart';
+import 'package:khnum/khnum.dart';
 
 void main() {
   final khnum =

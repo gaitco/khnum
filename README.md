@@ -1,6 +1,6 @@
-# Khnum Core
+# Khnum Templates
 
-<p align="center"><img src="assets/icon.svg" width="96" alt="Khnum Core icon"></p>
+<p align="center"><img src="assets/icon.svg" width="96" alt="Khnum icon"></p>
 
 Khnum is an HTML template engine for pure Dart servers. It supports layouts,
 includes, components, loops, and HTML escaping by default. It uses no Flutter,
@@ -31,7 +31,7 @@ code generation, or reflection and works with Shelf, Dart Frog, Serverpod, or
 ```
 
 ```dart
-import 'package:maat_khnum_core/maat_khnum_core.dart';
+import 'package:khnum/khnum.dart';
 
 final khnum = Khnum(
   viewsPath: 'views',

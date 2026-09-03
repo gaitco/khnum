@@ -2,7 +2,7 @@
 // Then open http://localhost:8080/ and http://localhost:8080/?guest=1
 import 'dart:io';
 
-import 'package:maat_khnum_core/maat_khnum_core.dart';
+import 'package:khnum/khnum.dart';
 import 'package:path/path.dart' as p;
 import 'package:shelf/shelf.dart';
 import 'package:shelf/shelf_io.dart' as io;
