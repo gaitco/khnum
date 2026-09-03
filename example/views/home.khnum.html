@@ -1,0 +1,31 @@
+@extends("layouts.app")
+
+@section("title", title)
+
+@section("content")
+    <h1>{{ heading }}</h1>
+
+    @if(user)
+        <x-alert type="success">Welcome back, {{ user.name }}!</x-alert>
+        <x-user-card :user="user" />
+    @else
+        <x-alert>Please <a href="/login">log in</a>.</x-alert>
+    @endif
+
+    <h2>Orders ({{ count(orders) }})</h2>
+    @unless(orders)
+        <p>No orders yet.</p>
+    @endunless
+    <ul>
+    @foreach(orders as order)
+        <li>#{{ order.id }} — {{ money(order.total) }} — {{ order.status }}</li>
+    @endforeach
+    </ul>
+
+    <script>window.page = {{ json({"user": user, "orderCount": count(orders)}) }};</script>
+@endsection
+
+@section("footer")
+    @parent
+    <small>Page rendered at {{ now }}</small>
+@endsection

@@ -1,0 +1,7 @@
+<article class="user-card">
+    <h3>{{ user.name }}</h3>
+    <p>{{ user.email }}</p>
+    @if(user.isAdmin)
+        <span class="badge">admin</span>
+    @endif
+</article>

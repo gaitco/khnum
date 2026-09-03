@@ -1,0 +1,12 @@
+name: maat_khnum_core
+description: Khnum HTML templates for pure Dart servers with layouts, includes, components, and safe escaping.
+version: 0.1.0
+repository: https://github.com/gaitco/maat_khnum_core
+environment:
+  sdk: ^3.12.0
+dependencies:
+  path: ^1.9.1
+dev_dependencies:
+  lints: ^6.1.0
+  shelf: ^1.4.2
+  test: ^1.31.2
