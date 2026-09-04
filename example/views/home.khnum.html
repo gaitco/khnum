@@ -5,7 +5,7 @@
 @section("content")
     <h1>{{ heading }}</h1>
 
-    @if(user)
+    @if(user != null)
         <x-alert type="success">Welcome back, {{ user.name }}!</x-alert>
         <x-user-card :user="user" />
     @else
@@ -13,13 +13,13 @@
     @endif
 
     <h2>Orders ({{ count(orders) }})</h2>
-    @unless(orders)
+    @if(orders.isEmpty)
         <p>No orders yet.</p>
-    @endunless
+    @endif
     <ul>
-    @foreach(orders as order)
-        <li>#{{ order.id }} — {{ money(order.total) }} — {{ order.status }}</li>
-    @endforeach
+    @for (final order in orders)
+        <li>#{{ order["id"] }} — {{ money(order["total"]) }} — {{ order["status"] }}</li>
+    @endfor
     </ul>
 
     <script>window.page = {{ json({"user": user, "orderCount": count(orders)}) }};</script>

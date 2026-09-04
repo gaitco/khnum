@@ -21,15 +21,14 @@ class User {
 }
 
 Future<void> main() async {
-  final views = p.join(p.dirname(Platform.script.toFilePath()), 'views');
+  final views = p.join(Directory.current.path, 'example', 'views');
   final khnum =
       Khnum(
           viewsPath: views,
           environment: TemplateEnvironment.development, // reloads edited files
-          missingVariables: MissingVariables.throwError,
         )
         ..share('appName', 'Acme')
-        ..helper(
+        ..function(
           'money',
           (args) => '\$${(args.first as num).toStringAsFixed(2)}',
         );

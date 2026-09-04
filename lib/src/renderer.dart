@@ -116,14 +116,26 @@ class Renderer {
         out.write(node.raw ? (value?.toString() ?? '') : escapeHtml(value));
       case IfNode():
         for (final branch in node.branches) {
-          if (isTruthy(branch.condition.eval(ctx))) {
+          final value = branch.condition.eval(ctx);
+          if (value is! bool) {
+            final hint = value is Iterable || value is Map || value is String
+                ? '; use .isNotEmpty'
+                : value == null
+                ? '; compare with null'
+                : '';
+            throw ctx.error(
+              '@if requires bool, got ${value.runtimeType}$hint',
+              branch.condition.line,
+            );
+          }
+          if (value) {
             _nodes(branch.body, ctx, out, state);
             return;
           }
         }
         if (node.elseBody != null) _nodes(node.elseBody!, ctx, out, state);
-      case ForeachNode():
-        _foreach(node, ctx, out, state);
+      case ForNode():
+        _for(node, ctx, out, state);
       case SectionNode():
         state.sections
             .putIfAbsent(node.name, () => [])
@@ -162,46 +174,29 @@ class Renderer {
     }
   }
 
-  void _foreach(
-    ForeachNode node,
-    RenderContext ctx,
-    StringBuffer out,
-    _State state,
-  ) {
+  void _for(ForNode node, RenderContext ctx, StringBuffer out, _State state) {
     final value = node.iterable.eval(ctx);
-    final List<MapEntry<Object?, Object?>> entries;
-    if (value == null) {
-      entries = const [];
-    } else if (value is Map) {
-      entries = [for (final e in value.entries) MapEntry(e.key, e.value)];
-    } else if (value is Iterable) {
-      var i = 0;
-      entries = [for (final v in value) MapEntry(i++, v)];
-    } else {
+    if (value is! Iterable) {
+      final hint = value is Map ? '; use .entries' : '';
       throw ctx.error(
-        'Cannot loop over ${value.runtimeType}; expected a list or map',
+        'Cannot loop over ${value.runtimeType}; expected Iterable$hint',
         node.line,
       );
     }
-    final parentLoop = ctx.has('loop') ? ctx.lookup('loop', node.line) : null;
-    final depth = parentLoop is Map ? (parentLoop['depth'] as int) + 1 : 1;
-    final count = entries.length;
+    final values = value.toList(growable: false);
+    final inheritedLoop = ctx.has('loop')
+        ? ctx.lookup('loop', node.line)
+        : null;
+    final parentLoop = inheritedLoop is LoopInfo ? inheritedLoop : null;
+    final depth = (parentLoop?.depth ?? 0) + 1;
+    final count = values.length;
     final scope = ctx.child();
     for (var i = 0; i < count; i++) {
-      scope.set(node.valueName, entries[i].value);
-      if (node.keyName != null) scope.set(node.keyName!, entries[i].key);
-      scope.set('loop', <String, Object?>{
-        'index': i,
-        'iteration': i + 1,
-        'remaining': count - i - 1,
-        'count': count,
-        'first': i == 0,
-        'last': i == count - 1,
-        'even': i.isEven,
-        'odd': i.isOdd,
-        'depth': depth,
-        'parent': parentLoop,
-      });
+      scope.set(node.valueName, values[i]);
+      scope.set(
+        'loop',
+        LoopInfo(index: i, count: count, depth: depth, parent: parentLoop),
+      );
       _nodes(node.body, scope, out, state);
     }
   }

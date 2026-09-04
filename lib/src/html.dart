@@ -1,7 +1,6 @@
 import 'dart:convert';
 
-// Same set as PHP's htmlspecialchars(ENT_QUOTES) that Khnum's e() uses;
-// `/` is left alone so URLs stay readable.
+// Escape HTML delimiters in text and attributes. `/` stays readable in URLs.
 const _escaper = HtmlEscape(
   HtmlEscapeMode(
     name: 'khnum',
@@ -21,8 +20,7 @@ String escapeHtml(Object? value) {
 }
 
 /// Marks a string as already-safe HTML so `{{ }}` will not escape it.
-/// The Khnum `Htmlable` equivalent. Construct it only around markup you
-/// produced yourself or already sanitised.
+/// Construct it only around markup you produced yourself or already sanitised.
 class HtmlString {
   const HtmlString(this.html);
 
@@ -46,8 +44,7 @@ class AttributeBag {
 
   bool has(String key) => _attributes.containsKey(key);
 
-  /// Merge defaults under the incoming attributes. `class` values are
-  /// concatenated (Khnum's `$attributes->merge(['class' => '...'])`).
+  /// Merge defaults under incoming attributes and concatenate `class` values.
   AttributeBag merge(Map<String, Object?> defaults) {
     final merged = <String, Object?>{...defaults};
     for (final entry in _attributes.entries) {

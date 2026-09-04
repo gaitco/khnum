@@ -10,17 +10,11 @@ import 'renderer.dart';
 /// production parses each template once and never touches the disk again.
 enum TemplateEnvironment { development, production }
 
-/// What happens when a template reads a variable or key that is not there.
-enum MissingVariables {
-  /// Throw [UndefinedVariableException] naming the template and line.
-  throwError,
+/// A Dart function templates may call: `{{ upper(name) }}`.
+typedef TemplateFunction = Object? Function(List<Object?> arguments);
 
-  /// Evaluate to `null`, which `{{ }}` prints as an empty string.
-  treatAsNull,
-}
-
-/// A function templates may call: `{{ upper(name) }}`.
-typedef Helper = Object? Function(List<Object?> arguments);
+@Deprecated('Use TemplateFunction.')
+typedef Helper = TemplateFunction;
 
 /// A custom directive: `@money(price)`. Receives the evaluated arguments and
 /// the current [RenderContext]; whatever it returns is written **unescaped**,
@@ -44,7 +38,7 @@ class _Resolver {
   final Object? Function(Object, String) resolve;
 }
 
-/// The template engine. Create one per application, register helpers and
+/// The template engine. Create one per application, register functions and
 /// directives at startup, then call [render] per request.
 ///
 /// ```dart
@@ -59,7 +53,6 @@ class Khnum {
     String? componentsPath,
     String extension = '.khnum.html',
     TemplateEnvironment environment = TemplateEnvironment.development,
-    MissingVariables missingVariables = MissingVariables.throwError,
     int maxDepth = 64,
   }) : this.withLoader(
          FileTemplateLoader(
@@ -68,7 +61,6 @@ class Khnum {
            extension: extension,
          ),
          environment: environment,
-         missingVariables: missingVariables,
          maxDepth: maxDepth,
        );
 
@@ -77,12 +69,10 @@ class Khnum {
   Khnum.inMemory(
     Map<String, String> templates, {
     TemplateEnvironment environment = TemplateEnvironment.development,
-    MissingVariables missingVariables = MissingVariables.throwError,
     int maxDepth = 64,
   }) : this.withLoader(
          MemoryTemplateLoader(templates),
          environment: environment,
-         missingVariables: missingVariables,
          maxDepth: maxDepth,
        );
 
@@ -90,12 +80,11 @@ class Khnum {
   Khnum.withLoader(
     this.loader, {
     this.environment = TemplateEnvironment.development,
-    this.missingVariables = MissingVariables.throwError,
     this.maxDepth = 64,
   }) {
-    helper('upper', (a) => a.first?.toString().toUpperCase());
-    helper('lower', (a) => a.first?.toString().toLowerCase());
-    helper('count', (a) {
+    function('upper', (a) => a.first?.toString().toUpperCase());
+    function('lower', (a) => a.first?.toString().toLowerCase());
+    function('count', (a) {
       final v = a.first;
       return v is Iterable
           ? v.length
@@ -103,19 +92,18 @@ class Khnum {
           ? v.length
           : 0;
     });
-    helper('json', (a) => toJsonHtml(a.first));
+    function('json', (a) => toJsonHtml(a.first));
   }
 
   final TemplateLoader loader;
   final TemplateEnvironment environment;
-  final MissingVariables missingVariables;
 
   /// How many nested includes, components and layouts a render may stack
   /// before it is treated as infinite recursion.
   final int maxDepth;
 
   final _cache = <String, _Compiled>{};
-  final _helpers = <String, Helper>{};
+  final _functions = <String, TemplateFunction>{};
   final _directives = <String, DirectiveHandler>{};
   final _resolvers = <_Resolver>[];
   final _shared = <String, Object?>{};
@@ -126,14 +114,20 @@ class Khnum {
 
   void share(String name, Object? value) => _shared[name] = value;
 
-  /// Register `{{ name(...) }}`.
-  void helper(String name, Helper fn) => _helpers[name] = fn;
+  /// Register a Dart function callable as `{{ name(...) }}`.
+  void function(String name, TemplateFunction callback) =>
+      _functions[name] = callback;
+
+  /// Use [function]. This alias will be removed in 0.3.0.
+  @Deprecated('Use function(). This alias will be removed in 0.3.0.')
+  void helper(String name, TemplateFunction callback) =>
+      function(name, callback);
 
   /// Register `@name(...)`. Must happen before the first render of any
   /// template that uses it, because unknown `@words` are plain text.
   void directive(String name, DirectiveHandler fn) {
-    if (builtInDirectives.contains(name)) {
-      throw ArgumentError.value(name, 'name', 'is a built-in directive');
+    if (builtInDirectives.contains(name) || removedDirectives.contains(name)) {
+      throw ArgumentError.value(name, 'name', 'is a reserved directive');
     }
     _directives[name] = fn;
     _cache.clear();
@@ -143,12 +137,14 @@ class Khnum {
   void resolve<T extends Object>(PropertyResolver<T> fn) =>
       _resolvers.add(_Resolver((v) => v is T, (v, key) => fn(v as T, key)));
 
-  Helper? helperFor(String name) => _helpers[name];
+  TemplateFunction? functionFor(String name) => _functions[name];
 
   DirectiveHandler? directiveFor(String name) => _directives[name];
 
   bool isDirective(String name) =>
-      builtInDirectives.contains(name) || _directives.containsKey(name);
+      builtInDirectives.contains(name) ||
+      removedDirectives.contains(name) ||
+      _directives.containsKey(name);
 
   Object? Function(Object, String)? resolverFor(Object value) =>
       _resolvers.where((r) => r.matches(value)).firstOrNull?.resolve;

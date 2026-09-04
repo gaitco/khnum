@@ -80,9 +80,9 @@ void main() {
 
   group('parser', () {
     test('builds nested block structure', () {
-      final t = parse('@if(a)@foreach(l as i){{ i }}@endforeach@else x@endif');
+      final t = parse('@if(a)@for (final i in l){{ i }}@endfor@else x@endif');
       final ifNode = t.nodes.single as IfNode;
-      expect(ifNode.branches.single.body.single, isA<ForeachNode>());
+      expect(ifNode.branches.single.body.single, isA<ForNode>());
       expect((ifNode.elseBody!.single as TextNode).text, ' x');
     });
     test('records extends and sections', () {

@@ -1,6 +1,6 @@
 name: khnum
 description: Khnum HTML templates for pure Dart servers with layouts, includes, components, and safe escaping.
-version: 0.1.0
+version: 0.2.0
 repository: https://github.com/gaitco/khnum
 environment:
   sdk: ^3.12.0

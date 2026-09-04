@@ -13,8 +13,8 @@ void main() {
   test('include with data overrides parent variables', () {
     final khnum = Khnum.inMemory({
       'page':
-          '@foreach(users as u)@include("card", {"user": u, "title": "x"})@endforeach',
-      'card': '{{ user.name }}:{{ title }};',
+          '@for (final u in users)@include("card", {"user": u, "title": "x"})@endfor',
+      'card': '{{ user["name"] }}:{{ title }};',
     });
     expect(
       khnum.renderSync('page', {

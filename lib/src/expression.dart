@@ -1,28 +1,19 @@
 import 'context.dart';
 import 'exceptions.dart';
 
-/// Khnum-loose truthiness: `null`, `false`, `0`, `''` and empty collections
-/// are false; everything else is true.
-bool isTruthy(Object? value) {
-  if (value == null || value == false) return false;
-  if (value is num) return value != 0;
-  if (value is String) return value.isNotEmpty;
-  if (value is Iterable) return value.isNotEmpty;
-  if (value is Map) return value.isNotEmpty;
-  return true;
-}
-
 /// A parsed expression from `{{ }}`, `@if()`, `:attr=""` and friends.
 ///
 /// Grammar, lowest to highest precedence:
 /// `a ? b : c` · `??` · `||` · `&&` · `== !=` · `< <= > >=` · `+ -` ·
-/// `* / %` · unary `! -` · postfix `.name`, `[expr]`, `helper(args)`.
+/// `* / %` · unary `! -` · postfix `.name`, `[expr]`, `function(args)`.
 abstract class Expression {
   const Expression(this.line);
 
   final int line;
 
   Object? eval(RenderContext ctx);
+
+  Object? _evalPostfix(RenderContext ctx) => eval(ctx);
 
   static Expression parse(
     String source, {
@@ -42,10 +33,6 @@ abstract class Expression {
     return list.items;
   }
 
-  /// `!expr`, used by `@unless`.
-  static Expression negate(Expression expression) =>
-      _Unary(expression.line, '!', expression);
-
   /// The value of a string literal, or `null` for anything else.
   String? get stringLiteral {
     final self = this;
@@ -54,6 +41,15 @@ abstract class Expression {
         : null;
   }
 }
+
+final class _NullShorted {
+  const _NullShorted();
+}
+
+const _nullShorted = _NullShorted();
+
+Object? _unwrapNullShort(Object? value) =>
+    identical(value, _nullShorted) ? null : value;
 
 class _Literal extends Expression {
   const _Literal(super.line, this.value);
@@ -74,7 +70,15 @@ class _Member extends Expression {
   final Expression target;
   final String key;
   @override
-  Object? eval(RenderContext ctx) => ctx.member(target.eval(ctx), key, line);
+  Object? eval(RenderContext ctx) => _unwrapNullShort(_evalPostfix(ctx));
+
+  @override
+  Object? _evalPostfix(RenderContext ctx) {
+    final value = target._evalPostfix(ctx);
+    return identical(value, _nullShorted)
+        ? _nullShorted
+        : ctx.member(value, key, line);
+  }
 }
 
 class _Index extends Expression {
@@ -82,8 +86,63 @@ class _Index extends Expression {
   final Expression target;
   final Expression key;
   @override
-  Object? eval(RenderContext ctx) =>
-      ctx.index(target.eval(ctx), key.eval(ctx), line);
+  Object? eval(RenderContext ctx) => _unwrapNullShort(_evalPostfix(ctx));
+
+  @override
+  Object? _evalPostfix(RenderContext ctx) {
+    final value = target._evalPostfix(ctx);
+    return identical(value, _nullShorted)
+        ? _nullShorted
+        : ctx.index(value, key.eval(ctx), line);
+  }
+}
+
+class _NullAwareMember extends Expression {
+  const _NullAwareMember(super.line, this.target, this.key);
+  final Expression target;
+  final String key;
+
+  @override
+  Object? eval(RenderContext ctx) => _unwrapNullShort(_evalPostfix(ctx));
+
+  @override
+  Object? _evalPostfix(RenderContext ctx) {
+    final value = target._evalPostfix(ctx);
+    if (identical(value, _nullShorted) || value == null) return _nullShorted;
+    return ctx.member(value, key, line);
+  }
+}
+
+class _NullAwareIndex extends Expression {
+  const _NullAwareIndex(super.line, this.target, this.key);
+  final Expression target;
+  final Expression key;
+
+  @override
+  Object? eval(RenderContext ctx) => _unwrapNullShort(_evalPostfix(ctx));
+
+  @override
+  Object? _evalPostfix(RenderContext ctx) {
+    final value = target._evalPostfix(ctx);
+    if (identical(value, _nullShorted) || value == null) return _nullShorted;
+    return ctx.index(value, key.eval(ctx), line);
+  }
+}
+
+class _NullAssert extends Expression {
+  const _NullAssert(super.line, this.value);
+  final Expression value;
+
+  @override
+  Object? eval(RenderContext ctx) => _unwrapNullShort(_evalPostfix(ctx));
+
+  @override
+  Object? _evalPostfix(RenderContext ctx) {
+    final result = value._evalPostfix(ctx);
+    if (identical(result, _nullShorted)) return _nullShorted;
+    return result ??
+        (throw ctx.error('Null check operator used on null', line));
+  }
 }
 
 class _Call extends Expression {
@@ -101,9 +160,24 @@ class _MethodCall extends Expression {
   final String name;
   final List<Expression> args;
   @override
-  Object? eval(RenderContext ctx) => ctx.callMethod(target.eval(ctx), name, [
-    for (final a in args) a.eval(ctx),
-  ], line);
+  Object? eval(RenderContext ctx) => _unwrapNullShort(_evalPostfix(ctx));
+
+  @override
+  Object? _evalPostfix(RenderContext ctx) {
+    final value = target._evalPostfix(ctx);
+    if (identical(value, _nullShorted)) return _nullShorted;
+    return ctx.callMethod(value, name, [
+      for (final a in args) a.eval(ctx),
+    ], line);
+  }
+}
+
+class _Group extends Expression {
+  const _Group(super.line, this.value);
+  final Expression value;
+
+  @override
+  Object? eval(RenderContext ctx) => value.eval(ctx);
 }
 
 class _ListLiteral extends Expression {
@@ -129,7 +203,7 @@ class _Unary extends Expression {
   @override
   Object? eval(RenderContext ctx) {
     final value = operand.eval(ctx);
-    if (op == '!') return !isTruthy(value);
+    if (op == '!') return !_bool(ctx, value, line, "Operator '!'");
     if (value is num) return -value;
     throw ctx.error('Cannot negate ${_describe(value)}', line);
   }
@@ -140,7 +214,9 @@ class _Ternary extends Expression {
   final Expression condition, then, otherwise;
   @override
   Object? eval(RenderContext ctx) =>
-      isTruthy(condition.eval(ctx)) ? then.eval(ctx) : otherwise.eval(ctx);
+      _bool(ctx, condition.eval(ctx), line, 'Ternary condition')
+      ? then.eval(ctx)
+      : otherwise.eval(ctx);
 }
 
 class _Binary extends Expression {
@@ -154,9 +230,11 @@ class _Binary extends Expression {
     final l = left.eval(ctx);
     switch (op) {
       case '&&':
-        return isTruthy(l) && isTruthy(right.eval(ctx));
+        if (!_bool(ctx, l, line, "Operator '&&'")) return false;
+        return _bool(ctx, right.eval(ctx), line, "Operator '&&'");
       case '||':
-        return isTruthy(l) || isTruthy(right.eval(ctx));
+        if (_bool(ctx, l, line, "Operator '||'")) return true;
+        return _bool(ctx, right.eval(ctx), line, "Operator '||'");
     }
     final r = right.eval(ctx);
     switch (op) {
@@ -165,7 +243,7 @@ class _Binary extends Expression {
       case '!=':
         return l != r;
       case '+':
-        if (l is String || r is String) return '${_str(l)}${_str(r)}';
+        if (l is String && r is String) return '$l$r';
         return _num(ctx, l, r, (a, b) => a + b);
       case '-':
         return _num(ctx, l, r, (a, b) => a - b);
@@ -200,18 +278,7 @@ class _Binary extends Expression {
     );
   }
 
-  /// `a ?? b`: like PHP's `??`, a missing variable or key on the left is
-  /// treated as `null` instead of an error, so `{{ user.nick ?? 'anon' }}`
-  /// works in development too.
-  Object? _coalesce(RenderContext ctx) {
-    Object? l;
-    try {
-      l = left.eval(ctx);
-    } on UndefinedVariableException {
-      l = null;
-    }
-    return l ?? right.eval(ctx);
-  }
+  Object? _coalesce(RenderContext ctx) => left.eval(ctx) ?? right.eval(ctx);
 
   int _compare(RenderContext ctx, Object? l, Object? r) {
     if (l is num && r is num) return l.compareTo(r);
@@ -223,9 +290,15 @@ class _Binary extends Expression {
   }
 }
 
-String _str(Object? v) => v == null ? '' : v.toString();
-
 String _describe(Object? v) => v == null ? 'null' : '${v.runtimeType} ($v)';
+
+bool _bool(RenderContext ctx, Object? value, int line, String use) {
+  if (value is bool) return value;
+  throw ctx.error(
+    '$use requires bool, got ${value == null ? 'null' : value.runtimeType}',
+    line,
+  );
+}
 
 // ---------------------------------------------------------------------------
 // Lexer
@@ -240,7 +313,7 @@ class _Token {
 }
 
 const _operators = [
-  '??', '&&', '||', '==', '!=', '<=', '>=', // two-char first
+  '?.', '?[', '??', '&&', '||', '==', '!=', '<=', '>=', // two-char first
   '<', '>', '+', '-', '*', '/', '%', '!', '?', ':', '.', ',',
   '(', ')', '[', ']', '{', '}',
 ];
@@ -416,7 +489,20 @@ class _Parser {
 
   Expression _postfix(Expression target) {
     while (true) {
-      if (_accept('.')) {
+      if (_accept('?.')) {
+        final name = _next();
+        if (name.kind != _Kind.ident) {
+          throw _error("Expected a property name after '?.'");
+        }
+        if (_isOp('(')) {
+          throw _error('Null-aware method calls are not supported');
+        }
+        target = _NullAwareMember(line, target, name.text);
+      } else if (_accept('?[')) {
+        final key = _ternary();
+        _expect(']');
+        target = _NullAwareIndex(line, target, key);
+      } else if (_accept('.')) {
         final name = _next();
         if (name.kind != _Kind.ident) {
           throw _error("Expected a property name after '.'");
@@ -430,6 +516,8 @@ class _Parser {
         final key = _ternary();
         _expect(']');
         target = _Index(line, target, key);
+      } else if (_accept('!')) {
+        target = _NullAssert(line, target);
       } else {
         return target;
       }
@@ -468,7 +556,7 @@ class _Parser {
         if (token.text == '(') {
           final inner = _ternary();
           _expect(')');
-          return inner;
+          return _Group(line, inner);
         }
         if (token.text == '[') {
           final items = <Expression>[];

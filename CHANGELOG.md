@@ -1,3 +1,17 @@
+## 0.2.0
+
+- Made conditions and boolean operators require `bool` instead of applying
+  loose truthiness.
+- Added explicit null-aware `?.` and `?[...]` access plus postfix `!`.
+- Replaced PHP-shaped loops with `@for (final item in items)` and explicit map
+  iteration through `.entries`.
+- Made raw map keys use brackets while dot access exposes Dart collection
+  properties.
+- Added `function()` for registered Dart functions; `helper()` is deprecated
+  until `0.3.0`.
+- Missing variables and keys now always throw. Removed legacy loop and
+  `@unless` syntax.
+
 ## 0.1.0
 
 Initial release.

@@ -2,49 +2,54 @@ import 'package:khnum/khnum.dart';
 import 'package:test/test.dart';
 
 void main() {
-  String render(String src, [Map<String, Object?> data = const {}]) =>
-      Khnum.inMemory({'t': src}).renderSync('t', data);
+  String render(String source, [Map<String, Object?> data = const {}]) =>
+      Khnum.inMemory({'test': source}).renderSync('test', data);
 
   group('@if', () {
-    const src = '@if(a)A@elseif(b)B@else C@endif';
-    test('if', () => expect(render(src, {'a': true, 'b': false}), 'A'));
-    test('elseif', () => expect(render(src, {'a': false, 'b': 1}), 'B'));
-    test('else', () => expect(render(src, {'a': 0, 'b': ''}), ' C'));
-    test(
-      'without else',
-      () => expect(render('@if(a)A@endif', {'a': null}), ''),
-    );
-    test('space before parens', () {
-      expect(render('@if (a)A@endif', {'a': true}), 'A');
+    const source = '@if(a)A@elseif(b)B@else C@endif';
+
+    test('selects the first true branch', () {
+      expect(render(source, {'a': true, 'b': false}), 'A');
+      expect(render(source, {'a': false, 'b': true}), 'B');
+      expect(render(source, {'a': false, 'b': false}), ' C');
     });
-    test('nested', () {
+
+    test('supports nesting and spaces before arguments', () {
+      expect(render('@if (a)A@endif', {'a': true}), 'A');
       expect(
-        render('@if(a)@if(b)AB@else A@endif@endif', {'a': 1, 'b': 0}),
+        render('@if(a)@if(b)AB@else A@endif@endif', {'a': true, 'b': false}),
         ' A',
       );
     });
-    test('expressions', () {
+
+    test('evaluates strict expressions', () {
       expect(
-        render('@if(user.age >= 18 && !banned)ok@endif', {
+        render('@if(user["age"] >= 18 && !banned)ok@endif', {
           'user': {'age': 20},
           'banned': false,
         }),
         'ok',
       );
     });
-  });
 
-  group('@unless', () {
-    test('renders when false', () {
-      expect(render('@unless(x)no@else yes@endunless', {'x': false}), 'no');
-      expect(render('@unless(x)no@else yes@endunless', {'x': true}), ' yes');
+    test('requires bool and suggests an explicit collection check', () {
+      expect(
+        () => render('@if(items)x@endif', {'items': <Object?>[]}),
+        throwsA(
+          isA<TemplateRenderException>().having(
+            (error) => error.message,
+            'message',
+            contains('isNotEmpty'),
+          ),
+        ),
+      );
     });
   });
 
-  group('@foreach', () {
-    test('lists', () {
+  group('@for', () {
+    test('iterates an Iterable with a scoped value', () {
       expect(
-        render('@foreach(items as item)[{{ item.name }}]@endforeach', {
+        render('@for (final item in items)[{{ item["name"] }}]@endfor', {
           'items': [
             {'name': 'a'},
             {'name': 'b'},
@@ -53,78 +58,70 @@ void main() {
         '[a][b]',
       );
     });
-    test('maps with key => value', () {
+
+    test('maps are traversed explicitly through entries', () {
       expect(
-        render('@foreach(m as k => v){{ k }}={{ v }};@endforeach', {
-          'm': {'x': 1, 'y': 2},
-        }),
+        render(
+          '@for (final entry in values.entries)'
+          '{{ entry.key }}={{ entry.value }};@endfor',
+          {
+            'values': {'x': 1, 'y': 2},
+          },
+        ),
         'x=1;y=2;',
       );
     });
-    test('list index as key', () {
-      expect(
-        render('@foreach(l as i => v){{ i }}{{ v }}@endforeach', {
-          'l': ['a', 'b'],
-        }),
-        '0a1b',
-      );
+
+    test('null and non-iterables are errors', () {
+      for (final value in [
+        null,
+        5,
+        'text',
+        {'a': 1},
+      ]) {
+        expect(
+          () => render('@for (final item in value)x@endfor', {'value': value}),
+          throwsA(isA<TemplateRenderException>()),
+          reason: 'value: $value',
+        );
+      }
     });
-    test('null iterates zero times', () {
-      expect(render('@foreach(l as v)x@endforeach', {'l': null}), '');
-    });
-    test('loop variable', () {
-      const src =
-          '@foreach(l as v){{ loop.iteration }}/{{ loop.count }}'
-          '{{ loop.first ? "F" : "" }}{{ loop.last ? "L" : "" }} @endforeach';
+
+    test('exposes loop metadata', () {
+      const source =
+          '@for (final value in values)'
+          '{{ loop.iteration }}/{{ loop.count }}'
+          '{{ loop.first ? "F" : "" }}{{ loop.last ? "L" : "" }} '
+          '@endfor';
       expect(
-        render(src, {
-          'l': [1, 2, 3],
+        render(source, {
+          'values': [1, 2, 3],
         }),
         '1/3F 2/3 3/3L ',
       );
     });
-    test('nested loop.parent and depth', () {
-      const src =
-          '@foreach(a as x)@foreach(b as y)'
+
+    test('exposes nested parent and depth metadata', () {
+      const source =
+          '@for (final outer in a)@for (final inner in b)'
           '{{ loop.parent.index }}{{ loop.index }}d{{ loop.depth }} '
-          '@endforeach@endforeach';
+          '@endfor@endfor';
       expect(
-        render(src, {
+        render(source, {
           'a': [0, 1],
           'b': [0],
         }),
         '00d2 10d2 ',
       );
     });
-    test('loop variable is scoped to the loop', () {
-      expect(
-        render('@foreach(l as v)@endforeach@if(x)ok@endif', {'l': [], 'x': 1}),
-        'ok',
-      );
-    });
-    test('iterating a non-collection is an error', () {
-      expect(
-        () => render('@foreach(n as v)@endforeach', {'n': 5}),
-        throwsA(isA<TemplateRenderException>()),
-      );
-    });
-  });
 
-  group('@for', () {
-    test('item in items', () {
+    test('keeps values and loop metadata scoped', () {
       expect(
-        render('@for(i in nums){{ i }},@endfor', {
-          'nums': [1, 2],
+        render('@for (final value in values)@endfor@if(show)ok@endif', {
+          'values': [],
+          'show': true,
         }),
-        '1,2,',
-      );
-    });
-    test('has loop variable', () {
-      expect(
-        render('@for(i in nums){{ loop.index }}@endfor', {
-          'nums': [7, 8],
-        }),
-        '01',
+        'ok',
       );
     });
   });
@@ -132,29 +129,56 @@ void main() {
   group('errors', () {
     test('unclosed block names the opener line', () {
       expect(
-        () => render('line1\n@if(a)\nnever closed'),
+        () => render('line1\n@if(a)\nnever closed', {'a': true}),
         throwsA(
           isA<TemplateSyntaxException>()
-              .having((e) => e.line, 'line', 2)
-              .having((e) => e.template, 'template', 't'),
+              .having((error) => error.line, 'line', 2)
+              .having((error) => error.template, 'template', 'test'),
         ),
       );
     });
-    test('stray @endif', () {
+
+    test('rejects a stray terminator', () {
       expect(
         () => render('x\n\n@endif'),
         throwsA(
-          isA<TemplateSyntaxException>().having((e) => e.line, 'line', 3),
+          isA<TemplateSyntaxException>().having(
+            (error) => error.line,
+            'line',
+            3,
+          ),
         ),
       );
     });
-    test('bad foreach syntax', () {
+
+    test('rejects legacy and incomplete loop syntax', () {
+      for (final source in [
+        '@foreach(items as item)@endforeach',
+        '@for (item in items)@endfor',
+        '@for (final item of items)@endfor',
+      ]) {
+        expect(
+          () => render(source, {'items': []}),
+          throwsA(isA<TemplateSyntaxException>()),
+          reason: source,
+        );
+      }
+    });
+
+    test('rejects removed unless syntax with a migration hint', () {
       expect(
-        () => render('@foreach(items)@endforeach'),
-        throwsA(isA<TemplateSyntaxException>()),
+        () => render('@unless(value)x@endunless', {'value': false}),
+        throwsA(
+          isA<TemplateSyntaxException>().having(
+            (error) => error.message,
+            'message',
+            contains('@if (!value)'),
+          ),
+        ),
       );
     });
-    test('missing condition', () {
+
+    test('rejects a missing condition', () {
       expect(
         () => render('@if\nx@endif'),
         throwsA(isA<TemplateSyntaxException>()),

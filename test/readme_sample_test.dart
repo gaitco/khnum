@@ -18,21 +18,21 @@ void main() {
 @section("content")
 <h1>{{ heading }}</h1>
 
-@if(user)
-    <x-alert type="success">Welcome back, {{ user.name }}!</x-alert>
+@if(user != null)
+    <x-alert type="success">Welcome back, {{ user["name"] }}!</x-alert>
 @else
     <p>Please log in.</p>
 @endif
 
 <ul>
-@foreach(items as item)
-    <li>{{ item.name }} {{ loop.last ? "" : "|" }}</li>
-@endforeach
+@for (final item in items)
+    <li>{{ item["name"] }} {{ loop.last ? "" : "|" }}</li>
+@endfor
 </ul>
 @endsection
 ''',
           'docs':
-              '{{ nickname ?? "anonymous" }} {{ items.length > 0 ? "In stock" : "Sold out" }} @include(partialName) {{ upper(user.name) }}',
+              '{{ nickname ?? "anonymous" }} {{ items.isNotEmpty ? "In stock" : "Sold out" }} @include(partialName) {{ upper(user["name"]) }}',
           'p': 'P',
         })..resolve<DateTime>(
           (date, key) => switch (key) {

@@ -35,26 +35,18 @@ class IfBranch {
   final List<Node> body;
 }
 
-/// `@if/@elseif/@else/@endif` and `@unless/@else/@endunless` (negated).
+/// `@if/@elseif/@else/@endif`.
 class IfNode extends Node {
   const IfNode(super.line, this.branches, this.elseBody);
   final List<IfBranch> branches;
   final List<Node>? elseBody;
 }
 
-/// `@foreach(items as item)`, `@foreach(map as key => value)`, and
-/// `@for(i in numbers)`, which is the same loop with a different spelling.
-class ForeachNode extends Node {
-  const ForeachNode(
-    super.line,
-    this.iterable,
-    this.valueName,
-    this.body, {
-    this.keyName,
-  });
+/// `@for (final item in items) ... @endfor`.
+class ForNode extends Node {
+  const ForNode(super.line, this.iterable, this.valueName, this.body);
   final Expression iterable;
   final String valueName;
-  final String? keyName;
   final List<Node> body;
 }
 

@@ -2,8 +2,30 @@ import 'engine.dart';
 import 'exceptions.dart';
 import 'html.dart';
 
+/// Metadata exposed as `loop` inside `@for` without pretending it is a map.
+class LoopInfo {
+  const LoopInfo({
+    required this.index,
+    required this.count,
+    required this.depth,
+    this.parent,
+  });
+
+  final int index;
+  final int count;
+  final int depth;
+  final LoopInfo? parent;
+
+  int get iteration => index + 1;
+  int get remaining => count - index - 1;
+  bool get first => index == 0;
+  bool get last => index == count - 1;
+  bool get even => index.isEven;
+  bool get odd => index.isOdd;
+}
+
 /// The variables visible while rendering one template, plus the services an
-/// expression needs (member resolution, helpers). Loops and components open
+/// expression needs (member resolution, registered functions). Loops and components open
 /// child contexts; lookups fall through to the parent frame.
 class RenderContext {
   RenderContext(
@@ -50,27 +72,93 @@ class RenderContext {
   }
 
   Object? member(Object? target, String key, int line) {
-    if (target == null) return null;
-    if (target is Map) {
-      if (target.containsKey(key)) return target[key];
-      return _missing("Undefined key '$key'", line);
+    if (target == null) {
+      throw error("Cannot read '$key' from null; use '?.'", line);
     }
     if (target is AttributeBag) return target[key];
+    if (target is LoopInfo) {
+      return switch (key) {
+        'index' => target.index,
+        'iteration' => target.iteration,
+        'remaining' => target.remaining,
+        'count' => target.count,
+        'first' => target.first,
+        'last' => target.last,
+        'even' => target.even,
+        'odd' => target.odd,
+        'depth' => target.depth,
+        'parent' => target.parent,
+        _ => throw error("Loop metadata has no property '$key'", line),
+      };
+    }
+    if (target is Map) {
+      return switch (key) {
+        'length' => target.length,
+        'isEmpty' => target.isEmpty,
+        'isNotEmpty' => target.isNotEmpty,
+        'keys' => target.keys,
+        'values' => target.values,
+        'entries' => target.entries,
+        _ => throw error(
+          "Maps have no property '$key'; use brackets for map keys",
+          line,
+        ),
+      };
+    }
     if (target is List) {
       return switch (key) {
         'length' => target.length,
         'isEmpty' => target.isEmpty,
         'isNotEmpty' => target.isNotEmpty,
-        'first' => target.isEmpty ? null : target.first,
-        'last' => target.isEmpty ? null : target.last,
+        'first' =>
+          target.isEmpty
+              ? throw error('Cannot read first from an empty list', line)
+              : target.first,
+        'last' =>
+          target.isEmpty
+              ? throw error('Cannot read last from an empty list', line)
+              : target.last,
         _ => throw error("Lists have no property '$key'", line),
       };
     }
-    if (target is String && key == 'length') return target.length;
+    if (target is String) {
+      return switch (key) {
+        'length' => target.length,
+        'isEmpty' => target.isEmpty,
+        'isNotEmpty' => target.isNotEmpty,
+        _ => throw error("Strings have no property '$key'", line),
+      };
+    }
+    if (target is Iterable) {
+      return switch (key) {
+        'length' => target.length,
+        'isEmpty' => target.isEmpty,
+        'isNotEmpty' => target.isNotEmpty,
+        'first' =>
+          target.isEmpty
+              ? throw error('Cannot read first from an empty iterable', line)
+              : target.first,
+        'last' =>
+          target.isEmpty
+              ? throw error('Cannot read last from an empty iterable', line)
+              : target.last,
+        _ => throw error("Iterables have no property '$key'", line),
+      };
+    }
+    if (target is MapEntry) {
+      return switch (key) {
+        'key' => target.key,
+        'value' => target.value,
+        _ => throw error("Map entries have no property '$key'", line),
+      };
+    }
     final resolver = engine.resolverFor(target);
     if (resolver != null) return resolver(target, key);
     final json = _asJson(target);
-    if (json != null) return member(json, key, line);
+    if (json != null) {
+      if (json.containsKey(key)) return json[key];
+      return _missing("Undefined property '$key'", line);
+    }
     throw error(
       "Cannot read '$key' from ${target.runtimeType}: pass a Map, give the "
       'class a toJson() method, or register a resolver with engine.resolve<T>()',
@@ -91,7 +179,14 @@ class RenderContext {
   }
 
   Object? index(Object? target, Object? key, int line) {
-    if (target == null) return null;
+    if (target == null) {
+      throw error('Cannot index null; use ?[...]', line);
+    }
+    if (target is Map) {
+      if (target.containsKey(key)) return target[key];
+      return _missing("Undefined key '$key'", line);
+    }
+    if (target is AttributeBag) return target[key.toString()];
     if (target is List) {
       if (key is! int) throw error('List index must be an integer', line);
       if (key < 0 || key >= target.length) {
@@ -99,18 +194,25 @@ class RenderContext {
       }
       return target[key];
     }
-    return member(target, key.toString(), line);
+    if (target is String) {
+      if (key is! int) throw error('String index must be an integer', line);
+      if (key < 0 || key >= target.length) {
+        return _missing('Index $key out of range (${target.length})', line);
+      }
+      return target[key];
+    }
+    throw error('Cannot index ${target.runtimeType}', line);
   }
 
   Object? call(String name, List<Object?> args, int line) {
-    final helper = engine.helperFor(name);
-    if (helper == null) throw error("Unknown helper '$name'", line);
+    final function = engine.functionFor(name);
+    if (function == null) throw error("Unknown function '$name'", line);
     try {
-      return helper(args);
+      return function(args);
     } on TemplateException {
       rethrow;
     } catch (e) {
-      throw error("Helper '$name' failed: $e", line);
+      throw error("Function '$name' failed: $e", line);
     }
   }
 
@@ -134,13 +236,12 @@ class RenderContext {
     }
     throw error(
       "Cannot call '$name' on ${target.runtimeType}: templates only call "
-      'registered helpers, e.g. $name(value)',
+      'registered functions, e.g. $name(value)',
       line,
     );
   }
 
   Object? _missing(String message, int line) {
-    if (engine.missingVariables == MissingVariables.treatAsNull) return null;
     throw UndefinedVariableException(message, template: template, line: line);
   }
 

@@ -31,9 +31,9 @@ void main() {
 @endif
 
 <ul>
-@foreach(items as item)
+@for (final item in items)
     <li>{{ item.name }}</li>
-@endforeach
+@endfor
 </ul>
 @endsection
 ''',
@@ -43,10 +43,7 @@ void main() {
       'heading': 'Hello <world>',
       'showWelcome': true,
       'user': User('Ann'),
-      'items': [
-        User('a'),
-        {'name': 'b'},
-      ],
+      'items': [User('a'), User('b')],
     });
     // Khnum-exact whitespace: a directive alone on its line leaves no blank
     // line; an echo keeps its trailing newline.
@@ -77,16 +74,12 @@ void main() {
     expect(khnum.renderSync('t'), 'AppApp');
   });
 
-  test('missing variable policy', () {
-    final strict = Khnum.inMemory({'t': '{{ nope }}'});
+  test('missing variables always throw', () {
+    final khnum = Khnum.inMemory({'t': '{{ nope }}'});
     expect(
-      () => strict.renderSync('t'),
+      () => khnum.renderSync('t'),
       throwsA(isA<UndefinedVariableException>()),
     );
-    final lax = Khnum.inMemory({
-      't': '[{{ nope }}]',
-    }, missingVariables: MissingVariables.treatAsNull);
-    expect(lax.renderSync('t'), '[]');
   });
 
   test('exists()', () {

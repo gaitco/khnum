@@ -1,5 +1,5 @@
 <nav>
-    @foreach(links as link)
-        <a href="{{ link.href }}" @if(link.href == currentPath)aria-current="page"@endif>{{ link.label }}</a>{{ loop.last ? "" : " | " }}
-    @endforeach
+    @for (final link in links)
+        <a href="{{ link["href"] }}" @if(link["href"] == currentPath)aria-current="page"@endif>{{ link["label"] }}</a>{{ loop.last ? "" : " | " }}
+    @endfor
 </nav>

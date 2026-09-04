@@ -51,10 +51,17 @@ void main() {
     );
   });
 
-  test('helpers and resolvers', () {
+  test('functions and resolvers', () {
     final khnum = Khnum.inMemory({'t': '{{ money(p) }} {{ d.year }}'})
-      ..helper('money', (a) => '\$${(a.first as num).toStringAsFixed(2)}')
+      ..function('money', (a) => '\$${(a.first as num).toStringAsFixed(2)}')
       ..resolve<DateTime>((d, key) => key == 'year' ? d.year : null);
     expect(khnum.renderSync('t', {'p': 3, 'd': DateTime(2026)}), '\$3.00 2026');
+  });
+
+  test('deprecated helper alias still forwards during 0.2.x', () {
+    final khnum = Khnum.inMemory({'t': '{{ double(n) }}'})
+      // ignore: deprecated_member_use_from_same_package
+      ..helper('double', (arguments) => (arguments.first as num) * 2);
+    expect(khnum.renderSync('t', {'n': 3}), '6');
   });
 }

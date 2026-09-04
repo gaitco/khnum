@@ -15,26 +15,26 @@ void main() {
 <footer>{{ appName }} - {{ year }}</footer>
 </body></html>''',
           'partials.nav': '''
-<nav>@foreach(links as link)<a href="{{ link.href }}">{{ link.label }}</a>@endforeach</nav>''',
+<nav>@for (final link in links)<a href="{{ link["href"] }}">{{ link["label"] }}</a>@endfor</nav>''',
           'components.alert': '''
 @props({"type": "info"})<div {{ attributes.merge({"class": "alert alert-" + type}) }}>{{ slot }}</div>''',
           'components.row': '''
-<tr class="{{ loop.odd ? "odd" : "even" }}"><td>{{ order.id }}</td><td>{{ order.customer.name }}</td><td>{{ money(order.total) }}</td><td>@if(order.paid)paid@else due@endif</td></tr>''',
+<tr class="{{ loop.odd ? "odd" : "even" }}"><td>{{ order["id"] }}</td><td>{{ order["customer"]["name"] }}</td><td>{{ money(order["total"]) }}</td><td>@if(order["paid"])paid@else due@endif</td></tr>''',
           'orders.index': '''
 @extends("layouts.app")
-@section("title", "Orders: " + count(orders))
+@section("title", "Orders")
 @section("content")
-<x-alert type="success">{{ count(orders) }} orders loaded for {{ user.name }}.</x-alert>
+<x-alert type="success">{{ count(orders) }} orders loaded for {{ user["name"] }}.</x-alert>
 <table>
-@foreach(orders as order)
+@for (final order in orders)
 <x-row :order="order" :loop="loop" />
-@endforeach
+@endfor
 </table>
-@unless(orders)<p>No orders.</p>@endunless
+@if(orders.isEmpty)<p>No orders.</p>@endif
 @endsection''',
         }, environment: TemplateEnvironment.production)
         ..share('appName', 'Acme')
-        ..helper('money', (a) => '\$${(a.first as num).toStringAsFixed(2)}');
+        ..function('money', (a) => '\$${(a.first as num).toStringAsFixed(2)}');
 
   final data = {
     'year': 2026,

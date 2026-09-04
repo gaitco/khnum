@@ -18,7 +18,7 @@ void main() {
   test('bound attributes evaluate in the caller scope', () {
     final khnum = engine({
       'page': '<x-user-card :user="user" :count="items.length" />',
-      'components.user-card': '{{ user.name }} ({{ count }})',
+      'components.user-card': '{{ user["name"] }} ({{ count }})',
     });
     expect(
       khnum.renderSync('page', {
@@ -133,8 +133,7 @@ void main() {
 
   test('loops inside slots', () {
     final khnum = engine({
-      'page':
-          '<x-list>@foreach(items as i)<li>{{ i }}</li>@endforeach</x-list>',
+      'page': '<x-list>@for (final i in items)<li>{{ i }}</li>@endfor</x-list>',
       'components.list': '<ul>{{ slot }}</ul>',
     });
     expect(

@@ -120,9 +120,8 @@ class Lexer {
     _tokens.add(token);
   }
 
-  /// Khnum compiles statements to `<?php ... ?>` and PHP swallows the one
-  /// newline after `?>`, so a directive alone on its line leaves no blank
-  /// line behind. Echoes keep theirs (Khnum doubles that newline on purpose).
+  /// A control directive alone on its line should not leave an empty HTML
+  /// line behind. Echoes keep their following newline because they emit text.
   int _swallowNewline(int cursor) {
     if (source.startsWith('\r\n', cursor)) return cursor + 2;
     if (source.startsWith('\n', cursor)) return cursor + 1;

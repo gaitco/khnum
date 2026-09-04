@@ -3,11 +3,10 @@ import 'exceptions.dart';
 import 'expression.dart';
 import 'lexer.dart';
 
-final _foreachArgs = RegExp(
-  r'^\s*(.+?)\s+as\s+([A-Za-z_]\w*)(?:\s*=>\s*([A-Za-z_]\w*))?\s*$',
+final _forArgs = RegExp(
+  r'^\s*final\s+([A-Za-z_]\w*)\s+in\s+(.+?)\s*$',
   dotAll: true,
 );
-final _forArgs = RegExp(r'^\s*([A-Za-z_]\w*)\s+in\s+(.+?)\s*$', dotAll: true);
 
 /// Directive names the parser understands. Everything else that is
 /// registered on the engine is a custom [DirectiveNode].
@@ -16,10 +15,6 @@ const builtInDirectives = {
   'elseif',
   'else',
   'endif',
-  'unless',
-  'endunless',
-  'foreach',
-  'endforeach',
   'for',
   'endfor',
   'section',
@@ -32,6 +27,8 @@ const builtInDirectives = {
   'include',
   'props',
 };
+
+const removedDirectives = {'unless', 'endunless', 'foreach', 'endforeach'};
 
 class _Body {
   _Body(this.nodes, this.slots, this.end);
@@ -163,39 +160,33 @@ class Parser {
   List<Node> _directive(Token t) {
     switch (t.text) {
       case 'if':
-      case 'unless':
         return [_if(t)];
-      case 'foreach':
-        final m = _foreachArgs.firstMatch(t.args ?? '');
-        if (m == null) {
-          throw _error(
-            '@foreach expects `items as item` or `items as key => item`',
-            t,
-          );
-        }
-        final body = _block(t, const {'endforeach'});
-        final hasKey = m[3] != null;
-        return [
-          ForeachNode(
-            t.line,
-            Expression.parse(m[1]!, template: template, line: t.line),
-            hasKey ? m[3]! : m[2]!,
-            body.nodes,
-            keyName: hasKey ? m[2] : null,
-          ),
-        ];
       case 'for':
         final m = _forArgs.firstMatch(t.args ?? '');
-        if (m == null) throw _error('@for expects `item in items`', t);
+        if (m == null) {
+          throw _error('@for expects `final item in items`', t);
+        }
         final body = _block(t, const {'endfor'});
         return [
-          ForeachNode(
+          ForNode(
             t.line,
             Expression.parse(m[2]!, template: template, line: t.line),
             m[1]!,
             body.nodes,
           ),
         ];
+      case 'foreach':
+        throw _error(
+          '@foreach was removed in 0.2.0; use '
+          '`@for (final item in items) ... @endfor`',
+          t,
+        );
+      case 'endforeach':
+        throw _error('@endforeach was removed in 0.2.0; use @endfor', t);
+      case 'unless':
+        throw _error('@unless was removed in 0.2.0; use @if (!value)', t);
+      case 'endunless':
+        throw _error('@endunless was removed in 0.2.0; use @endif', t);
       case 'section':
         final args = _args(t, min: 1, max: 2);
         final name = _name(t, args[0]);
@@ -230,8 +221,6 @@ class Parser {
       case 'elseif':
       case 'else':
       case 'endif':
-      case 'endunless':
-      case 'endforeach':
       case 'endfor':
       case 'endsection':
       case 'stop':
@@ -248,10 +237,8 @@ class Parser {
   }
 
   IfNode _if(Token opener) {
-    final unless = opener.text == 'unless';
-    final end = unless ? 'endunless' : 'endif';
+    const end = 'endif';
     var condition = _expr(opener);
-    if (unless) condition = Expression.negate(condition);
     final branches = <IfBranch>[];
     List<Node>? elseBody;
     while (true) {
@@ -269,9 +256,6 @@ class Parser {
       if (terminator.text == 'else') {
         elseBody = const [];
       } else {
-        if (unless) {
-          throw _error('@elseif is not valid inside @unless', terminator);
-        }
         condition = _expr(terminator);
       }
     }

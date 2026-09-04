@@ -7,103 +7,180 @@ includes, components, loops, and HTML escaping by default. It uses no Flutter,
 code generation, or reflection and works with Shelf, Dart Frog, Serverpod, or
 `dart:io`.
 
-```html
-{{-- views/dashboard.khnum.html --}}
-@extends("layouts.app")
-
-@section("title", title)
-
-@section("content")
-<h1>{{ heading }}</h1>
-
-@if(user)
-    <x-alert type="success">Welcome back, {{ user.name }}!</x-alert>
-@else
-    <p>Please log in.</p>
-@endif
-
-<ul>
-@foreach(items as item)
-    <li>{{ item.name }} {{ loop.last ? "" : "|" }}</li>
-@endforeach
-</ul>
-@endsection
-```
+Khnum templates are HTML with a small presentation expression language. They
+do not execute Dart source. Prepare data and perform I/O in normal Dart code,
+then pass the result to the view; register a Dart function when several views
+need the same formatting operation.
 
 ```dart
-import 'package:khnum/khnum.dart';
-
-final khnum = Khnum(
-  viewsPath: 'views',
-  environment: TemplateEnvironment.production,
-);
+final khnum = Khnum(viewsPath: 'views')
+  ..function(
+    'money',
+    (arguments) => '\$${(arguments.first as num).toStringAsFixed(2)}',
+  );
 
 final html = await khnum.render('dashboard', {
   'title': 'Dashboard',
-  'heading': 'Hello',
-  'user': user,        // Map, or any object with toJson()
-  'items': items,
+  'user': user,
+  'orders': orders,
 });
 ```
 
-Return it from Shelf:
+```html
+{{-- views/dashboard.khnum.html --}}
+<h1>{{ title }}</h1>
 
-```dart
-Response.ok(html, headers: {'content-type': 'text/html; charset=utf-8'});
+@if (user != null)
+  <p>Welcome, {{ user.name }}.</p>
+@endif
+
+@if (orders.isEmpty)
+  <p>No orders yet.</p>
+@else
+  <ul>
+  @for (final order in orders)
+    <li>#{{ order["id"] }} — {{ money(order["total"]) }}</li>
+  @endfor
+  </ul>
+@endif
 ```
 
-A complete server is in `example/shelf_example.dart` (`PORT=8080 dart run example/shelf_example.dart`).
+Return the HTML from any Dart server. With Shelf:
 
-## Why not compile templates like Laravel Blade?
+```dart
+return Response.ok(
+  html,
+  headers: {'content-type': 'text/html; charset=utf-8'},
+);
+```
 
-Laravel Blade turns `.blade.php` into PHP and lets PHP execute it. Dart has no
-`eval`, `dart:mirrors` does not exist in compiled binaries, and code generation
-would make every template edit a build step. Khnum instead uses a parsed AST and
-a small, safe expression language. Templates cannot run Dart; they read the
-data you pass and call the helpers you register.
+A complete server is in `example/shelf_example.dart`:
 
-## What is supported
+```bash
+PORT=8080 dart run example/shelf_example.dart
+```
 
-| Area | Syntax |
+The Maat integration guide is at [`docs/views.md`](../../docs/views.md).
+
+## Expressions follow Dart's intent
+
+Conditions are booleans. Khnum does not coerce `null`, `0`, strings, or
+collections to `false`:
+
+```html
+@if (items.isNotEmpty) ... @endif
+@if (user != null) ... @endif
+@if (!isGuest) ... @endif
+```
+
+Nullable access is explicit:
+
+```html
+{{ user?.name ?? "Guest" }}
+{{ values?[0] }}
+{{ requiredUser!.name }}
+```
+
+`??` handles an existing value that is `null`; misspelled variables and
+missing keys always throw an error containing the template name and line.
+
+Raw maps use brackets for keys. Dot access exposes collection properties:
+
+```html
+{{ userMap["name"] }}
+{{ items.length }}
+{{ items.first }}
+{{ settings.keys }}
+
+@for (final entry in settings.entries)
+  {{ entry.key }}={{ entry.value }}
+@endfor
+```
+
+Objects with `toJson()` expose their declared fields with dot access. For
+other application types, register a property resolver:
+
+```dart
+khnum.resolve<DateTime>((date, property) => switch (property) {
+  'year' => date.year,
+  'iso' => date.toIso8601String(),
+  _ => null,
+});
+```
+
+The expression language supports literals, lists, maps, property and index
+access, `+ - * / %`, comparisons, `&&`, `||`, `!`, `??`, `?:`, and registered
+function calls. Arithmetic requires numbers; `+` joins strings only when both
+operands are strings. Arbitrary instance method calls and Dart source execution
+are intentionally unavailable.
+
+## Templates
+
+- `{{ expression }}` escapes HTML; `null` renders as an empty string.
+- `{!! expression !!}` and `HtmlString` output trusted HTML without escaping.
+- `{{-- comment --}}` is removed from output; `@{{` and `@@` escape template
+  delimiters.
+- `@if`, `@elseif`, `@else`, and `@endif` select branches.
+- `@for (final item in items)` and `@endfor` iterate an `Iterable`.
+- `loop` exposes `index`, `iteration`, `remaining`, `count`, `first`, `last`,
+  `even`, `odd`, `depth`, and `parent`.
+- `@extends`, `@section`, `@yield`, `@parent`, `@show`, and `@stop` compose
+  layouts.
+- `@include("view", {"key": value})` renders a partial with the parent scope.
+- `<x-alert>`, bound attributes such as `:user="user"`, slots, `@props`, and
+  `attributes.merge(...)` build anonymous components.
+
+## Extending Khnum
+
+Registered functions return values for expressions:
+
+```dart
+khnum.function('initials', (arguments) {
+  final name = arguments.first as String;
+  return name.split(' ').map((part) => part[0]).join();
+});
+```
+
+Custom directives produce markup. Their return value is unescaped, so escape
+user-controlled values with `escapeHtml` inside the handler:
+
+```dart
+khnum.directive(
+  'badge',
+  (context, arguments) => '<span>${escapeHtml(arguments.first)}</span>',
+);
+```
+
+Use `share()` for application-wide values and a custom `TemplateLoader` when
+templates do not live on the local filesystem. Production mode parses each
+template once; development mode reloads a changed file.
+
+## Safety boundary
+
+View names are validated before filesystem access. Layouts, includes, and
+components share a recursion limit. Escaped output is the default, and missing
+data fails loudly.
+
+Templates should still be trusted application files: although they cannot run
+arbitrary Dart, they can read every value passed to them and perform expensive
+loops.
+
+## Migrating from `0.1.0`
+
+| `0.1.0` | `0.2.0` |
 |---|---|
-| Escaped output | `{{ expr }}` (escapes `& < > " '`; `null` prints nothing) |
-| Raw output | `{!! expr !!}`, `HtmlString`, `{{ json(data) }}` for `<script>` |
-| Comments, literals | `{{-- --}}`, `@{{ }}`, `@@` |
-| Conditionals | `@if / @elseif / @else / @endif`, `@unless / @endunless` |
-| Loops | `@foreach(items as item)`, `@foreach(map as k => v)`, `@for(i in items)`, `loop.index/iteration/first/last/count/remaining/even/odd/depth/parent` |
-| Layouts | `@extends`, `@section ... @endsection`, `@section("t", value)`, `@yield("s", default)`, `@parent`, `@show`, `@stop` |
-| Includes | `@include("view")`, `@include("view", {"k": v})`, shares the parent scope |
-| Components | `<x-name attr="s" :attr="expr" flag>`, `{{ slot }}`, `<x-slot name="s">`, `<x-slot:s>`, `@props({...})`, `{{ attributes }}`, `attributes.merge({...})`, `<x-forms.input>` for subdirectories |
-| Data | `Map`, `List` (`[i]`, `.length`, `.first`, `.last`), objects via `toJson()`, or `khnum.resolve<T>(...)` |
-| Expressions | literals, `.` and `[]`, `+ - * / %`, `== != < <= > >=`, `&& \|\| !`, `??`, `?:`, helper calls |
-| Extensibility | `helper()`, `directive()`, `resolve<T>()`, `share()`, custom `TemplateLoader` |
-| Modes | development (reload on file change) / production (parse once, in memory) |
-| Errors | every exception carries the template name and line |
+| `@foreach(items as item)` | `@for (final item in items)` |
+| `@endforeach` | `@endfor` |
+| `@unless(value)` | `@if (!value)` |
+| `@if(items)` | `@if (items.isNotEmpty)` |
+| `@if(user)` | `@if (user != null)` |
+| nullable `user.name` | `user?.name` |
+| raw map `map.name` | `map["name"]` |
+| missing values treated as null | pass an explicit nullable value |
+| `helper()` | `function()` |
 
-Truthiness is Khnum-loose: `null`, `false`, `0`, `''` and empty collections are false.
-
-## Intentionally out of scope
-
-`@stack/@push`, `@once`, `@php`, `@verbatim`, `@forelse`, `@switch`, `@auth/@guest`, `@csrf/@method`, `@each`, `@lang`, class-based components, method calls on data (`{{ s.toUpperCase() }}` is an error; use a helper), an on-disk compiled cache, streaming output, and any form of arbitrary Dart evaluation.
-
-## Security
-
-- `{{ }}` escapes; only `{!! !!}`, `HtmlString` and custom directive output are raw.
-- View names are validated before any filesystem access and must resolve under the views root, so `../` never works, in `render`, `@include`, `@extends` or components.
-- Includes, components and layouts share a depth counter (`maxDepth`, default 64) so recursion throws instead of overflowing.
-- Missing variables throw by default (`MissingVariables.throwError`) or evaluate to `null` (`MissingVariables.treatAsNull`).
-- Templates are code. Never render templates uploaded by users: they cannot execute Dart, but they can read all of the data you pass and loop indefinitely.
-
-## Performance
-
-`benchmark/render_benchmark.dart` renders a page made of a layout, a partial, two components and a 50-row table from the warm cache:
-
-| Mode | Per render | Throughput |
-|---|---|---|
-| `dart run` (JIT) | ~115 µs | ~8,600 renders/s |
-| `dart compile exe` (AOT) | ~125 µs | ~8,000 renders/s |
-
-Measured on an Apple Silicon laptop with Dart 3.12; run it yourself for your hardware.
+The deprecated `helper()` Dart alias remains during `0.2.x` and will be
+removed in `0.3.0`. Removed template syntax has no compatibility aliases.
 
 ## Running the checks
 
@@ -111,7 +188,6 @@ Measured on an Apple Silicon laptop with Dart 3.12; run it yourself for your har
 dart analyze
 dart test
 dart run benchmark/render_benchmark.dart
-PORT=8080 dart run example/shelf_example.dart
 ```
 
 ## License

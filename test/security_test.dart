@@ -96,7 +96,7 @@ void main() {
     });
     test('legitimate nesting below the limit is fine', () {
       final khnum = Khnum.inMemory({
-        'a': '@foreach(items as i)<x-b :n="i" />@endforeach',
+        'a': '@for (final i in items)<x-b :n="i" />@endfor',
         'components.b': '@if(n > 0)<x-b :n="n - 1" />@endif{{ n }}',
       });
       expect(
@@ -163,7 +163,7 @@ void main() {
       ('{{ x', 1),
       ('\n{!! x', 2),
       ('@if(a)\n', 1),
-      ('\n\n@foreach(a as)\n@endforeach', 3),
+      ('\n\n@for (final a in)\n@endfor', 3),
       ('@section("a")', 1),
       ('<x-a>', 1),
       ('\n<x-a foo=bar />', 2),

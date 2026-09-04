@@ -33,7 +33,7 @@ class UndefinedVariableException extends TemplateException {
   UndefinedVariableException(super.message, {super.template, super.line});
 }
 
-/// Runtime failure while rendering: helper threw, bad operand types,
+/// Runtime failure while rendering: function threw, bad operand types,
 /// include recursion past [Khnum.maxDepth].
 class TemplateRenderException extends TemplateException {
   TemplateRenderException(super.message, {super.template, super.line});
